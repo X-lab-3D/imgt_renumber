@@ -10,12 +10,15 @@ on a fully pip-installable stack:
 
     pyhmmer            (bundles HMMER3, no system binary)
     biopython          (structure parsing / writing)
-    ANARCI (prihoda fork, the pyhmmer branch)  + its bundled IMGT HMMs
+    ANARCI (pinned pyhmmer fork)  + its bundled IMGT HMMs
 
-Run the one-time setup, then renumber:
+Run the one-time setup, then renumber. Output goes to stdout, so it behaves as a
+Unix filter and composes with pdb-tools and shell pipes:
 
-    python imgt_renumber.py setup
-    python imgt_renumber.py number 1ao7.pdb -o 1ao7_imgt.pdb
+    imgt-renumber setup
+    imgt-renumber 1ao7.pdb > 1ao7_imgt.pdb
+    cat 1ao7.pdb | imgt-renumber > 1ao7_imgt.pdb
+    pdb_selchain -D,E 1ao7.pdb | imgt-renumber --chains D,E > out.pdb
 
 `setup` installs the backend, copies the prebuilt IMGT HMMs into place, and
 applies a tiny str/bytes compatibility patch so it works with current pyhmmer.
@@ -169,34 +172,38 @@ def run_setup():
         "(d[0][0]['chain_type'], d[0][0]['species'], d[0][0]['bitscore']))"
     )
     subprocess.check_call([sys.executable, "-c", test])
-    print("\nSetup complete. You can now run:  python imgt_renumber.py number IN.pdb -o OUT.pdb")
+    print("\nSetup complete. You can now run:  imgt-renumber IN.pdb > OUT.pdb",
+          file=sys.stderr)
 
 
 # --------------------------------------------------------------------------- #
 #  STRUCTURE I/O HELPERS
 # --------------------------------------------------------------------------- #
-def _load_structure(path):
+def _read_structure(inp):
+    """Read a structure from a path or, if inp is '-', from stdin (assumed PDB)."""
+    import io as _io
     from Bio.PDB import PDBParser, MMCIFParser
 
-    ext = os.path.splitext(path)[1].lower()
+    if inp == "-":
+        data = sys.stdin.read()
+        if not data.strip():
+            print("error: no input on stdin", file=sys.stderr)
+            sys.exit(1)
+        return PDBParser(QUIET=True).get_structure("input", _io.StringIO(data)), "pdb"
+
+    ext = os.path.splitext(inp)[1].lower()
     if ext in (".cif", ".mmcif"):
-        parser = MMCIFParser(QUIET=True)
-        fmt = "cif"
-    else:
-        parser = PDBParser(QUIET=True)
-        fmt = "pdb"
-    structure = parser.get_structure("input", path)
-    return structure, fmt
+        return MMCIFParser(QUIET=True).get_structure("input", inp), "cif"
+    return PDBParser(QUIET=True).get_structure("input", inp), "pdb"
 
 
-def _save_structure(structure, path, fmt):
+def _write_structure(structure, fmt, handle):
+    """Write structure to an open text handle (e.g. sys.stdout) in the given format."""
     from Bio.PDB import PDBIO, MMCIFIO
 
-    ext = os.path.splitext(path)[1].lower()
-    use_cif = ext in (".cif", ".mmcif") or (fmt == "cif" and ext not in (".pdb", ".ent"))
-    io = MMCIFIO() if use_cif else PDBIO()
-    io.set_structure(structure)
-    io.save(path)
+    io_obj = MMCIFIO() if fmt == "cif" else PDBIO()
+    io_obj.set_structure(structure)
+    io_obj.save(handle)
 
 
 def _three_to_one():
@@ -254,7 +261,8 @@ def renumber_structure(structure, scheme="imgt", allowed_species=None,
         numbering, details, _ = results
         if numbering[0] is None:
             if verbose:
-                print(f"  chain {cid}: no Ig/TCR variable domain detected - left unchanged")
+                print(f"  chain {cid}: no Ig/TCR variable domain detected - left unchanged",
+                      file=sys.stderr)
             continue
 
         # Build the new id for every amino-acid residue index in this chain.
@@ -321,7 +329,7 @@ def renumber_structure(structure, scheme="imgt", allowed_species=None,
             if verbose:
                 sc = f"{score:.1f}" if score is not None else "?"
                 print(f"  chain {cid}: {label}, species={species}, "
-                      f"score={sc}, V-domain residues={assigned}")
+                      f"score={sc}, V-domain residues={assigned}", file=sys.stderr)
 
     return report
 
@@ -373,65 +381,65 @@ def run_number(args):
     try:
         import anarci  # noqa: F401
     except ImportError:
-        print("ANARCI backend not installed. Run:  python imgt_renumber.py setup",
+        print("ANARCI backend not installed. Run:  imgt-renumber setup",
               file=sys.stderr)
         sys.exit(1)
 
-    structure, fmt = _load_structure(args.input)
-    out = args.output or _default_out(args.input)
+    structure, in_fmt = _read_structure(args.input)
+    out_fmt = args.format or in_fmt
     species = [s.strip() for s in args.species.split(",")] if args.species else None
     chains = set(c.strip() for c in args.chains.split(",")) if args.chains else None
 
-    print(f"Renumbering {args.input}  (scheme={args.scheme}, constant={args.constant})")
     report = renumber_structure(
         structure, scheme=args.scheme, allowed_species=species,
         bit_score_threshold=args.bit_score_threshold, constant=args.constant,
-        restrict_chains=chains, verbose=True,
+        restrict_chains=chains, verbose=not args.quiet,
     )
     if not report:
-        print("No variable domains were numbered - output not written.", file=sys.stderr)
+        print("error: no variable domains were numbered - nothing written.",
+              file=sys.stderr)
         sys.exit(2)
 
-    _save_structure(structure, out, fmt)
-    print(f"\nWrote {out}  ({len(report)} domain(s) numbered)")
-
-
-def _default_out(inp):
-    base, ext = os.path.splitext(inp)
-    return f"{base}_imgt{ext or '.pdb'}"
+    _write_structure(structure, out_fmt, sys.stdout)
 
 
 def build_parser():
     p = argparse.ArgumentParser(
-        description="Renumber TCR/antibody PDB or mmCIF files with IMGT numbering (via ANARCI/pyhmmer).")
-    sub = p.add_subparsers(dest="cmd", required=True)
-
-    sub.add_parser("setup", help="One-time install/patch of the numbering backend.")
-
-    n = sub.add_parser("number", help="Renumber a structure file.")
-    n.add_argument("input", help="Input .pdb / .cif file")
-    n.add_argument("-o", "--output", help="Output file (default: <input>_imgt.<ext>)")
-    n.add_argument("--scheme", default="imgt", choices=["imgt", "aho"],
+        prog="imgt-renumber",
+        description="Renumber TCR/antibody variable domains with IMGT numbering. "
+                    "Reads a PDB (or mmCIF) file or stdin, writes the renumbered "
+                    "structure to stdout - so it composes with pdb-tools and shell pipes.",
+        epilog="One-time backend setup (after install):  imgt-renumber setup")
+    p.add_argument("input", nargs="?", default="-",
+                   help="Input .pdb/.cif file. Omit or use '-' to read from stdin.")
+    p.add_argument("--scheme", default="imgt", choices=["imgt", "aho"],
                    help="Numbering scheme (TCR supports imgt or aho). Default: imgt")
-    n.add_argument("--species", default=None,
+    p.add_argument("--species", default=None,
                    help="Comma-separated allowed species (e.g. human,mouse). Default: all")
-    n.add_argument("--chains", default=None,
+    p.add_argument("--chains", default=None,
                    help="Comma-separated chain IDs to restrict to (default: all chains)")
-    n.add_argument("--constant", default="renumber",
+    p.add_argument("--constant", default="renumber",
                    choices=["renumber", "original", "drop"],
                    help="Handling of non-variable-domain residues (e.g. constant domain). "
                         "Default: renumber sequentially after the V domain.")
-    n.add_argument("--bit-score-threshold", type=float, default=80,
+    p.add_argument("--bit-score-threshold", type=float, default=80,
                    help="ANARCI bit-score threshold for accepting a domain. Default: 80")
+    p.add_argument("--format", default=None, choices=["pdb", "cif"],
+                   help="Output format written to stdout (default: match input).")
+    p.add_argument("-q", "--quiet", action="store_true",
+                   help="Suppress the per-domain summary printed to stderr.")
     return p
 
 
 def main(argv=None):
-    args = build_parser().parse_args(argv)
-    if args.cmd == "setup":
+    argv = list(sys.argv[1:] if argv is None else argv)
+    # `setup` is the one non-filter subcommand; handle it before the file parser
+    # so that `imgt-renumber IN.pdb` works without a subcommand.
+    if argv and argv[0] == "setup":
         run_setup()
-    elif args.cmd == "number":
-        run_number(args)
+        return
+    args = build_parser().parse_args(argv)
+    run_number(args)
 
 
 if __name__ == "__main__":

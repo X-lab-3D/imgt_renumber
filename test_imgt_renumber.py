@@ -45,10 +45,8 @@ VBETA_LONG = ("DAGVIQSPRHEVTEMGQEVTLRCKPISGHNSLFWYRQTMMRGLELLIYFNNNVPIDDSGMPE"
               "DRFSAKMPNASFSTLKIQPSEPRDSAVYFCASSYRRDDGGTTPPNNTGELFFGEGSRLTVL")
 
 
-def _make_pdb(chains):
-    """chains: list of (chain_id, one_letter_seq). Returns a Structure object."""
-    from Bio.PDB import PDBParser
-
+def _pdb_text(chains):
+    """chains: list of (chain_id, one_letter_seq). Returns PDB text (CA-only)."""
     lines, serial = [], 1
     for cid, seq in chains:
         x = 0.0
@@ -62,8 +60,13 @@ def _make_pdb(chains):
             x += 3.8
         lines.append("TER")
     lines.append("END")
-    handle = io.StringIO("\n".join(lines) + "\n")
-    return PDBParser(QUIET=True).get_structure("t", handle)
+    return "\n".join(lines) + "\n"
+
+
+def _make_pdb(chains):
+    """chains: list of (chain_id, one_letter_seq). Returns a Structure object."""
+    from Bio.PDB import PDBParser
+    return PDBParser(QUIET=True).get_structure("t", io.StringIO(_pdb_text(chains)))
 
 
 def _numbering(chain):
@@ -119,3 +122,21 @@ def test_constant_drop_removes_tail():
     # V domain only; nothing numbered beyond the IMGT range.
     assert max(nums) <= 128
     assert len(nums) == len(VALPHA)
+
+
+def test_cli_streams_pure_pdb_to_stdout(tmp_path, capsys):
+    """The renumbered PDB must go to stdout with no diagnostics mixed in."""
+    import imgt_renumber
+
+    pdb = tmp_path / "in.pdb"
+    pdb.write_text(_pdb_text([("E", VBETA)]))
+
+    imgt_renumber.main([str(pdb)])
+    captured = capsys.readouterr()
+
+    body = [l for l in captured.out.splitlines() if l.strip()]
+    assert body, "expected PDB on stdout"
+    allowed = ("ATOM", "HETATM", "TER", "END", "MODEL", "ENDMDL", "ANISOU")
+    assert all(l.startswith(allowed) for l in body), "stdout must be pure PDB records"
+    # The per-domain summary belongs on stderr, not stdout.
+    assert "chain E" in captured.err
