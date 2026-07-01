@@ -20,7 +20,7 @@ Install the package from GitHub, then run the one-time backend setup:
 ```bash
 pip install "git+https://github.com/LilySnow/imgt-renumber.git"
 imgt-renumber setup
-imgt-renumber 1ao7.pdb > 1ao7_imgt.pdb
+imgt-renumber number 1ao7.pdb -o 1ao7_imgt.pdb
 ```
 
 Using a virtual environment (or conda env) is recommended, since `setup` installs and
@@ -47,44 +47,32 @@ You can also just run the single script directly — no `pip install .` needed:
 
 ```bash
 python imgt_renumber.py setup
-python imgt_renumber.py 1ao7.pdb > 1ao7_imgt.pdb
+python imgt_renumber.py number 1ao7.pdb -o 1ao7_imgt.pdb
 ```
 
 ## Use
 
-`imgt-renumber` is a Unix filter: it reads a PDB (or mmCIF) file **or stdin**, and
-writes the renumbered structure to **stdout**. Use shell redirection or pipes.
-
 ```bash
-# file in, redirect stdout to a file
-imgt-renumber 1ao7.pdb > 1ao7_imgt.pdb
+# basic: writes <input>_imgt.pdb
+imgt-renumber number 1ao7.pdb
 
-# read from stdin
-cat 1ao7.pdb | imgt-renumber > 1ao7_imgt.pdb
+# choose the output name
+imgt-renumber number 1ao7.pdb -o 1ao7_imgt.pdb
 
-# compose with pdb-tools (or anything else) in a pipeline
-pdb_selchain -D,E 1ao7.pdb | imgt-renumber --chains D,E > tcr_imgt.pdb
-
-# mmCIF input works too (output format follows the input unless --format is set)
-imgt-renumber model.cif > model_imgt.cif
+# mmCIF in/out works too (by file extension)
+imgt-renumber number model.cif -o model_imgt.cif
 ```
 
-A short per-domain summary is printed to **stderr** (so it never pollutes the piped
-structure); add `-q`/`--quiet` to silence it.
-
-Options:
+Options for the `number` command:
 
 | flag | default | meaning |
 |------|---------|---------|
-| `input` (positional) | stdin | input `.pdb`/`.cif`; omit or use `-` for stdin |
+| `-o, --output` | `<input>_imgt.<ext>` | output path |
 | `--scheme` | `imgt` | `imgt` or `aho` (the two TCR-valid schemes) |
 | `--species` | all | restrict, e.g. `--species human,mouse` |
 | `--chains` | all | restrict, e.g. `--chains D,E` |
 | `--constant` | `renumber` | how to treat non-variable-domain residues (see below) |
 | `--bit-score-threshold` | `80` | ANARCI acceptance threshold |
-| `--format` | match input | output format on stdout: `pdb` or `cif` |
-| `-q, --quiet` | off | suppress the stderr summary |
-
 
 ### What gets renumbered
 
@@ -137,7 +125,7 @@ a proxy or firewall, make sure `pip` and `git` can reach `github.com` and
 `pypi.org`. Fully offline installs aren't supported out of the box (you'd need to
 pre-stage the ANARCI wheel and the `dat/` HMM folder).
 
-**`ANARCI backend not installed`.**
+**`ANARCI backend not installed` when running `number`.**
 Run `imgt-renumber setup` first (once per environment).
 
 **No variable domains were numbered.**
