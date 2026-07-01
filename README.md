@@ -18,7 +18,7 @@ residues of a renumbered output file.
 Install the package from GitHub, then run the one-time backend setup:
 
 ```bash
-pip install "git+https://github.com/LilySnow/imgt-renumber.git"
+pip install "git+https://github.com/X-lab-3D/imgt_renumber.git"
 imgt-renumber setup
 imgt-renumber number 1ao7.pdb -o 1ao7_imgt.pdb
 ```
