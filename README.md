@@ -8,10 +8,7 @@ network build step; this tool stands on a fully **pip-installable** stack instea
 - `biopython` — structure parsing/writing
 - ANARCI (a pinned [pyhmmer fork](https://github.com/LilySnow/ANARCI-pyhmmer-fork)) + its prebuilt IMGT HMMs
 
-ANARCI does the actual numbering, so results match ANARCI/IMGT exactly. This tool
-adds the part ANARCI doesn't give you: extracting chain sequences from the structure,
-running the numbering, and mapping IMGT numbers + insertion codes back onto the
-residues of a renumbered output file.
+ANARCI does the actual numbering, so results match ANARCI/IMGT exactly. 
 
 ## Install
 
