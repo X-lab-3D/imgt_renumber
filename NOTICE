@@ -1,0 +1,18 @@
+imgt-renumber
+Copyright (c) 2026 <Li Xue>
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It relies at runtime on the following third-party components, which are
+installed separately (via pip / the `setup` step) and remain under their own
+licenses:
+
+- ANARCI (via the fork at https://github.com/LilySnow/ANARCI-pyhmmer-fork,
+  forked from https://github.com/prihoda/ANARCI and originally
+  https://github.com/oxpig/ANARCI) - BSD 3-Clause.
+  Copyright 2019 Charlotte Deane, James Dunbar, Alexsandr Kovaltsuk, Claire Marks.
+- pyhmmer, which bundles HMMER3 and Easel - MIT / BSD-3-Clause / BSD-2-Clause.
+- Biopython - Biopython License Agreement (BSD-style).
+
+MUSCLE (public domain) is used only within ANARCI's HMM build pipeline and is
+not invoked at runtime by this tool.

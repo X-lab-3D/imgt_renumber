@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "imgt-renumber"
+version = "0.1.0"
+description = "Renumber TCR/antibody PDB & mmCIF files with IMGT numbering (ANARCI + pyhmmer, pip-only)."
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "pyhmmer>=0.10",
+    "biopython>=1.80",
+    # ANARCI's pyhmmer fork (not on PyPI), pinned for reproducibility. Installs
+    # the code; run `imgt-renumber setup` once afterwards to drop in the IMGT
+    # HMMs and apply the str/bytes compatibility patch.
+    "anarci @ git+https://github.com/LilySnow/ANARCI-pyhmmer-fork.git@4995e15925f6584115b76ee790c19a7468fbcc8a",
+]
+
+[project.scripts]
+imgt-renumber = "imgt_renumber:main"
+
+[tool.setuptools]
+py-modules = ["imgt_renumber"]

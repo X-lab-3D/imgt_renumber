@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 <Li Xue>
 """
 imgt_renumber.py - Renumber TCR (and antibody) PDB/mmCIF files with IMGT numbering.
 
@@ -38,8 +40,9 @@ CHAIN_TYPE_LABELS = {
     "L": "antibody lambda (VL-lambda)",
 }
 
-ANARCI_GIT = "git+https://github.com/prihoda/ANARCI.git"
-ANARCI_REPO = "https://github.com/prihoda/ANARCI.git"
+ANARCI_PIN = "4995e15925f6584115b76ee790c19a7468fbcc8a"  # pinned commit for reproducibility
+ANARCI_REPO = "https://github.com/LilySnow/ANARCI-pyhmmer-fork.git"
+ANARCI_GIT = f"git+{ANARCI_REPO}@{ANARCI_PIN}"
 
 
 # --------------------------------------------------------------------------- #
@@ -96,12 +99,15 @@ def _ensure_hmms(anarci_pkg_dir: str):
     target = os.path.join(anarci_pkg_dir, "dat", "HMMs", "ALL.hmm")
     if os.path.exists(target):
         return
-    print("  IMGT HMM database missing - fetching prebuilt HMMs from the repo...")
+    print("  IMGT HMM database missing - fetching prebuilt HMMs from the pinned fork...")
     tmp = tempfile.mkdtemp(prefix="anarci_hmm_")
-    subprocess.check_call(
-        ["git", "clone", "--depth", "1", "--quiet", ANARCI_REPO, os.path.join(tmp, "src")]
-    )
-    src_dat = os.path.join(tmp, "src", "lib", "python", "anarci", "dat")
+    src = os.path.join(tmp, "src")
+    # Shallow-fetch exactly the pinned commit so HMMs match the installed code.
+    subprocess.check_call(["git", "init", "-q", src])
+    subprocess.check_call(["git", "-C", src, "remote", "add", "origin", ANARCI_REPO])
+    subprocess.check_call(["git", "-C", src, "fetch", "-q", "--depth", "1", "origin", ANARCI_PIN])
+    subprocess.check_call(["git", "-C", src, "checkout", "-q", "FETCH_HEAD"])
+    src_dat = os.path.join(src, "lib", "python", "anarci", "dat")
     if not os.path.exists(os.path.join(src_dat, "HMMs", "ALL.hmm")):
         raise RuntimeError("Prebuilt HMMs not found in the ANARCI repo - layout may have changed.")
     dst_dat = os.path.join(anarci_pkg_dir, "dat")
@@ -111,21 +117,39 @@ def _ensure_hmms(anarci_pkg_dir: str):
     shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _anarci_pkg_dir():
+    """Return the installed anarci package dir, or None if not properly installed.
+    Uses a fresh interpreter so in-process import caching can't interfere."""
+    code = ("import anarci, os, sys;"
+            "f=getattr(anarci,'__file__',None);"
+            "sys.stdout.write(os.path.dirname(f) if f else '')")
+    try:
+        out = subprocess.check_output([sys.executable, "-c", code],
+                                      stderr=subprocess.DEVNULL).decode().strip()
+    except subprocess.CalledProcessError:
+        return None
+    # A bare namespace-package leftover (e.g. a stray dat/ dir) has no anarci.py.
+    if out and os.path.exists(os.path.join(out, "anarci.py")):
+        return out
+    return None
+
+
 def run_setup():
     print("[1/4] Installing pyhmmer + biopython ...")
     _pip("pyhmmer", "biopython")
 
     print("[2/4] Installing ANARCI (pyhmmer fork) ...")
-    try:
-        import anarci  # noqa: F401
-        print("  anarci already importable.")
-    except ImportError:
+    if _anarci_pkg_dir():
+        print("  anarci already installed.")
+    else:
         _pip(ANARCI_GIT)
 
-    import importlib
-    import anarci
-    importlib.reload(anarci)
-    pkg_dir = os.path.dirname(anarci.__file__)
+    pkg_dir = _anarci_pkg_dir()
+    if not pkg_dir:
+        raise RuntimeError(
+            "ANARCI did not install correctly. Try:\n"
+            f"  pip install '{ANARCI_GIT}'"
+        )
 
     print("[3/4] Ensuring IMGT HMM database is present ...")
     _ensure_hmms(pkg_dir)
